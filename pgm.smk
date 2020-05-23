@@ -1,27 +1,28 @@
 rule index:
     input: fasta=FASTA
-    output: INDEX
+    output: directory(INDEX)
     benchmark: "out/benchmarks/index.txt"
     log: "out/logs/index.txt"
     conda: "envs/myenv.yaml"
-    params: n="12", R="'span[hosts=1] rusage[mem=15]'", J="index", o="out/logs/index.out", eo="out/logs/index.err"
+    threads: 12
+    params: R="'span[hosts=1] rusage[mem=15]'", J="index", o="out/logs/index.out", eo="out/logs/index.err"
     shell: "mkdir -p {output} ; \
             STAR \
-            --runThreadN {params.n} \
+            --runThreadN {threads} \
             --runMode genomeGenerate \
             --genomeDir {output} \
             --genomeFastaFiles {input.fasta} 2> {log}"
 
-
 rule filter:
+    # input: bam="out/{sample}.Aligned.sortedByCoord.out.bam"
     input: bam="out/{sample}.Aligned.sortedByCoord.out.bam"
     output: "out/{sample}.Aligned.trimmed.out.bam"
     benchmark: "out/benchmarks/{sample}.filter.txt"
     log: "out/logs/{sample}.filter.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="filter", o="out/logs/filter.out", eo="out/logs/filter.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="filter", o="out/logs/filter.out", eo="out/logs/filter.err"
     shell: "samtools view -b -h -F 4 -F 256 -F 512 -q 30 {input.bam} > {output} 2> {log}"
-
 
 rule BuildBamIndex:
     input: "out/{sample}.Aligned.trimmed.out.bam"
@@ -29,11 +30,11 @@ rule BuildBamIndex:
     benchmark: "out/benchmarks/{sample}.BuildBamIndex.txt"
     log: "out/logs/{sample}.BuildBamIndex.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="BuildBamIndex", o="out/logs/BuildBamIndex.out", eo="out/logs/BuildBamIndex.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="BuildBamIndex", o="out/logs/BuildBamIndex.out", eo="out/logs/BuildBamIndex.err"
     shell: "picard \
             BuildBamIndex \
             INPUT={input} 2> {log}"
-
 
 if 'GTF' in globals():
     rule StringTie_GTF:
@@ -42,11 +43,12 @@ if 'GTF' in globals():
         benchmark: "out/benchmarks/{sample}.StringTie.txt"
         log: "out/logs/{sample}.filterAndTrimBed.txt"
         conda: "envs/myenv.yaml"
-        params: n="6", R="'span[hosts=1] rusage[mem=20]'", J="StringTie", o="out/logs/StringTie.out", eo="out/logs/StringTie.err"
+        threads: 6
+        params: R="'span[hosts=1] rusage[mem=20]'", J="StringTie", o="out/logs/StringTie.out", eo="out/logs/StringTie.err"
         shell: "stringtie \
                 -G {GTF} \
                 {input.bam} \
-                -p {params.n} \
+                -p {threads} \
                 -o {output} \
                 -c 2.5 \
                 -m 300 \
@@ -59,18 +61,17 @@ else:
         benchmark: "out/benchmarks/{sample}.StringTie.txt"
         log: "out/logs/{sample}.filterAndTrimBed.txt"
         conda: "envs/myenv.yaml"
-        params: n="6", R="'span[hosts=1] rusage[mem=20]'", J="StringTie", o="out/logs/StringTie.out", eo="out/logs/StringTie.err"
+        threads: 6
+        params: R="'span[hosts=1] rusage[mem=20]'", J="StringTie", o="out/logs/StringTie.out", eo="out/logs/StringTie.err"
         shell: "stringtie \
                 {input.bam} \
-                -p {params.n} \
+                -p {threads} \
                 -o {output} \
                 -c 2.5 \
                 -m 300 \
                 -f .01 2> {log}"
 
-
 snakemake.utils.makedirs('out/all-merge')
-
 
 rule merge:
     input: expand("out/{sample}-stringtie.gtf",sample=SAMPLES)
@@ -78,11 +79,12 @@ rule merge:
     benchmark: "out/benchmarks/merge.txt"
     log: "out/logs/merge.txt"
     conda: "envs/myenv.yaml"
-    params: n="12", R="'span[hosts=1] rusage[mem=4]'", J="merge", o="out/logs/merge.out", eo="out/logs/merge.err"
+    threads: 12
+    params: R="'span[hosts=1] rusage[mem=4]'", J="merge", o="out/logs/merge.out", eo="out/logs/merge.err"
     shell: "stringtie \
             --merge \
             -o {output} \
-            -p {params.n} \
+            -p {threads} \
             -c 2.5 \
             -m 300 \
             -T 1 \
@@ -98,7 +100,8 @@ if 'GTF' in globals():
         output: merged="out/all-merge/merged-UCSC.gtf", reference="out/all-merge/reference-UCSC.gtf"
         benchmark: "out/benchmarks/UCSC.txt"
         log: "out/logs/UCSC.txt"
-        params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="UCSC", o="out/logs/UCSC.out", eo="out/logs/UCSC.err"
+        threads: 1
+        params: R="'span[hosts=1] rusage[mem=10]'", J="UCSC", o="out/logs/UCSC.out", eo="out/logs/UCSC.err"
         shell: "cat {GTF} | grep chr > {output.reference}; \
             cat {input} | grep chr > {output.merged} 2> {log}"
 
@@ -109,7 +112,8 @@ else:
         output: merged="out/all-merge/merged-UCSC.gtf"
         benchmark: "out/benchmarks/UCSC.txt"
         log: "out/logs/UCSC.txt"
-        params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="UCSC", o="out/logs/UCSC.out", eo="out/logs/UCSC.err"
+        threads: 1
+        params: R="'span[hosts=1] rusage[mem=10]'", J="UCSC", o="out/logs/UCSC.out", eo="out/logs/UCSC.err"
         shell: "cat {input} | grep chr > {output.merged} 2> {log}"
 
 
@@ -120,7 +124,8 @@ rule gtf_file_to_cDNA_seqs:
     benchmark: "out/benchmarks/{model}.gtf_file_to_cDNA_seqs.txt"
     log: "out/logs/{model}.gtf_file_to_cDNA_seqs.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="gtf_file_to_cDNA_seqs", o="out/logs/gtf_file_to_cDNA_seqs.out", eo="out/logs/gtf_file_to_cDNA_seqs.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="gtf_file_to_cDNA_seqs", o="out/logs/gtf_file_to_cDNA_seqs.out", eo="out/logs/gtf_file_to_cDNA_seqs.err"
     shell: "gffread {input} -T -o {output.gtf} \
         --no-pseudo \
         --force-exons \
@@ -134,7 +139,8 @@ rule LongOrfs:
     benchmark: "out/benchmarks/{model}.LongOrfs.json"
     log: "../logs/{model}.LongOrfs.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="LongOrfs", o="out/logs/LongOrfs.out", eo="out/logs/LongOrfs.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="LongOrfs", o="out/logs/LongOrfs.out", eo="out/logs/LongOrfs.err"
     shell: "cd out/all-merge ; \
         TransDecoder.LongOrfs \
         -t {wildcards.model}.transcripts.fasta \
@@ -147,7 +153,8 @@ rule makeblastdb:
     benchmark: "out/benchmarks/makeblastdb.json"
     log: "out/logs/makeblastdb.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=4]'", J="makeblastdb", o="out/logs/makeblastdb.out", eo="out/logs/makeblastdb.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=4]'", J="makeblastdb", o="out/logs/makeblastdb.out", eo="out/logs/makeblastdb.err"
     shell: "makeblastdb \
         -in {UNIPROT} \
         -dbtype prot 2> {log}"
@@ -160,9 +167,10 @@ rule blastp:
     benchmark: "out/benchmarks/{model}.blastp.json"
     log: "out/logs/{model}.blastp.txt"
     conda: "envs/myenv.yaml"
-    params: n="24", R="'span[hosts=1] rusage[mem=4]'", J="blastp", o="out/logs/blastp.out", eo="out/logs/blastp.err"
+    threads: 24
+    params: R="'span[hosts=1] rusage[mem=4]'", J="blastp", o="out/logs/blastp.out", eo="out/logs/blastp.err"
     shell: "blastp \
-        -num_threads {params.n} \
+        -num_threads {threads} \
         -query {input.pep}  \
         -db {UNIPROT}  \
         -max_target_seqs 1 \
@@ -180,7 +188,8 @@ rule Predict:
     benchmark: "out/benchmarks/{model}.Predict.json"
     log: "../logs/{model}.Predict.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=18]'", J="Predict", o="out/logs/Predict.out", eo="out/logs/Predict.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=18]'", J="Predict", o="out/logs/Predict.out", eo="out/logs/Predict.err"
     shell: "cd out/all-merge; TransDecoder.Predict \
         -t {wildcards.model}.transcripts.fasta \
         --single_best_only \
@@ -193,7 +202,8 @@ rule gtf_to_alignment_gff3:
     benchmark: "out/benchmarks/{model}.gtf_to_alignment_gff3.txt"
     log: "out/logs/{model}.gtf_to_alignment_gff3.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="gtf_to_alignment_gff3", o="out/logs/gtf_to_alignment_gff3.out", eo="out/logs/gtf_to_alignment_gff3.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="gtf_to_alignment_gff3", o="out/logs/gtf_to_alignment_gff3.out", eo="out/logs/gtf_to_alignment_gff3.err"
     shell: "gtf_to_alignment_gff3.pl {input} > {output} 2> {log}"
 
 
@@ -205,7 +215,8 @@ rule cdna_alignment_orf_to_genome_orf:
     benchmark: "out/benchmarks/{model}.cdna_alignment_orf_to_genome_orf.txt"
     log: "out/logs/{model}.cdna_alignment_orf_to_genome_orf.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="cdna_alignment_orf_to_genome_orf", o="out/logs/cdna_alignment_orf_to_genome_orf.out", eo="out/logs/cdna_alignment_orf_to_genome_orf.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="cdna_alignment_orf_to_genome_orf", o="out/logs/cdna_alignment_orf_to_genome_orf.out", eo="out/logs/cdna_alignment_orf_to_genome_orf.err"
     shell: "cdna_alignment_orf_to_genome_orf.pl {input.gff3_td} {input.gff3} {input.fasta_td} > {output} 2> {log}"
 
 
@@ -215,7 +226,8 @@ rule gff3_file_to_bed:
     benchmark: "out/benchmarks/{model}.gff3_file_to_bed.txt"
     log: "out/logs/{model}.gff3_file_to_bed.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="gff3_file_to_bed", o="out/logs/gff3_file_to_bed.out", eo="out/logs/gff3_file_to_bed.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="gff3_file_to_bed", o="out/logs/gff3_file_to_bed.out", eo="out/logs/gff3_file_to_bed.err"
     shell: "cat {input} | grep -P \"\tCDS\t\" | gffread --force-exons - -o- | gff3_file_to_bed.pl /dev/stdin | tail -n +2 > {output} 2> {log}"
 
 
@@ -225,16 +237,19 @@ rule gff3_file_to_proteins:
     benchmark: "out/benchmarks/{model}.gff3_file_to_proteins.txt"
     log: "out/logs/{model}.gff3_file_to_proteins.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="gff3_file_to_proteins", o="out/logs/gff3_file_to_proteins.out", eo="out/logs/gff3_file_to_proteins.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="gff3_file_to_proteins", o="out/logs/gff3_file_to_proteins.out", eo="out/logs/gff3_file_to_proteins.err"
     shell: "cat {input} | grep -P \"\tCDS\t\" | gffread --force-exons - -o- | gff3_file_to_proteins.pl --gff3 /dev/stdin --fasta {FASTA} | egrep -o '^[^*]+' > {output} 2> {log}"
 
 rule reorderFASTA:
+    '''Had to do this in Ubuntu 18.06: sudo ln -s /lib/x86_64-linux-gnu/libreadline.so.7 /lib/x86_64-linux-gnu/libreadline.so.6 '''
     input: "out/all-merge/{model}/proteome.fasta"
     output: "out/all-merge/{model}/proteome.unique.fasta"
     benchmark: "out/benchmarks/{model}.reorderFASTA.txt"
     log: "out/logs/{model}.reorderFASTA.txt"
     conda: "envs/myenv.yaml"
-    params: n="1", R="'span[hosts=1] rusage[mem=2]'", J="reorderFASTA", o="out/logs/reorderFASTA.out", eo="out/logs/reorderFASTA.err", wd=WD
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=2]'", J="reorderFASTA", o="out/logs/reorderFASTA.out", eo="out/logs/reorderFASTA.err", wd=WD
     script: "scripts/reorderFASTA.R"
 
 rule mqpar_conversion:
@@ -242,7 +257,8 @@ rule mqpar_conversion:
     output: "out/{model}_mqpar.xml"
     benchmark: "out/benchmarks/{model}.mqpar_conversion.txt"
     log: "out/logs/{model}.mqpar_conversion.txt"
-    params: n="1", R="'span[hosts=1] rusage[mem=10]'", J="mqpar_conversion", o="out/logs/mqpar_conversion.out", eo="out/logs/mqpar_conversion.err"
+    threads: 1
+    params: R="'span[hosts=1] rusage[mem=10]'", J="mqpar_conversion", o="out/logs/mqpar_conversion.out", eo="out/logs/mqpar_conversion.err"
     run:
         import os
         raw_files = []
@@ -286,5 +302,5 @@ rule maxQuant:
     benchmark: "out/benchmarks/{model}.maxQuant.txt"
     log: "out/logs/{model}.maxQuant.txt"
     singularity: "docker://mono:5.12.0.226"
-    params: n=THREADS, J="MQ", R="'span[ptile=" + THREADS +  "] rusage[mem=10]'", o="out/logs/mq.out", eo="out/logs/mq.err"
+    params: J="MQ", R="'span[ptile=" + THREADS +  "] rusage[mem=10]'", o="out/logs/mq.out", eo="out/logs/mq.err"
     shell: "mono {MQ} {input.par}"
